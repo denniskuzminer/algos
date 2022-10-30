@@ -40,7 +40,9 @@ def get_EMAs(
                 f"{period} EMA": [r.ema for r in result],
             }
         )
+
         data_ = data_.merge(ma_df, how="inner", on="DateTime")
+
     return data_
 
 
@@ -65,11 +67,21 @@ def derive_timeframes_from_5_min_data(
     return all_timeframes
 
 
+def getIntradayVWAP(row, quotes_list):
+    result = indicators.get_vwap(
+        [quotes_list[row.name]],
+        start=datetime(
+            row["DateTime"].year, row["DateTime"].month, row["DateTime"].day
+        ),
+    )
+    row_num += 1
+    return r[0].vwap
+
+
 def add_EMA_derived_cols(df_list: Tuple[pd.DataFrame, List[Quote]]) -> pd.DataFrame:
     print("Getting EMA-derived columns")
     (computed_data, quotes_list) = df_list
     print("Getting Regular Market Hours", end=", ", flush=True)
-
     computed_data["Regular Market Hours"] = (
         computed_data["DateTime"].dt.time >= pd.to_datetime(MARKET_OPEN).time()
     ) & (computed_data["DateTime"].dt.time <= pd.to_datetime(MARKET_CLOSE).time())
@@ -81,6 +93,12 @@ def add_EMA_derived_cols(df_list: Tuple[pd.DataFrame, List[Quote]]) -> pd.DataFr
     ) & (computed_data["21 EMA"] > computed_data["34 EMA"])
 
     print("VWAP", end=", ", flush=True)
+    # global row_num
+    # row_num = 0
+    computed_data["Intraday VWAP"] = computed_data.apply(
+        lambda row: getIntradayVWAP(row, quotes_list), axis=1
+    )
+
     # make it so that every day at 930 it will reset change it
     result = indicators.get_vwap(quotes_list, start=datetime(2021, 9, 1))
     vwap_df = pd.DataFrame.from_dict(
@@ -207,6 +225,26 @@ def add_technicals(df_list: Tuple[pd.DataFrame, List[Quote]]) -> pd.DataFrame:
     return computed_data
 
 
+def add_price_action(df_list: Tuple[pd.DataFrame, List[Quote]]) -> pd.DataFrame:
+    print("Getting price action")
+
+    (df, quotes_list) = df_list
+    init_cols = df.columns
+    df.columns = [*["open", "high", "low", "close", "vol"], *df.columns[5:]]
+    df = candlestick.inverted_hammer(market_data, target="Is Inverted Hammer")
+    df = candlestick.hammer(df, target="Is Hammer")
+    df = candlestick.bearish_engulfing(df, target="Is Bearish Engulfing")
+    df = candlestick.bullish_engulfing(df, target="Is Bullish Engulfing")
+    df.columns = [
+        *init_cols,
+        "Is Inverted Hammer",
+        "Is Hammer",
+        "Is Bearish Engulfing",
+        "Is Bullish Engulfing",
+    ]
+    return df
+
+
 # TTM Squeeze - https://github.com/hackingthemarkets/ttm-squeeze
 # https://tlc.thinkorswim.com/center/reference/Tech-Indicators/studies-library/T-U/TTM-Squeeze
 def TTM_Squeeze(
@@ -251,7 +289,7 @@ def read_data(file_name: str) -> Tuple[pd.DataFrame, List[Quote]]:
     market_data.columns = DOHLCV_COLS
     market_data["DateTime"] = pd.to_datetime(market_data["DateTime"])
     market_data = market_data.set_index("DateTime")
-    return (market_data, [])  # get_quotes_tuple_from_df(market_data)
+    return get_quotes_tuple_from_df(market_data)  # (market_data, [])  #
 
 
 def get_agg_market_data():
