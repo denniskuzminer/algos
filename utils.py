@@ -25,6 +25,7 @@ import numpy as np
 import time
 import sys
 from tqdm import tqdm
+from candlestick import candlestick
 
 
 def get_EMAs(
@@ -40,8 +41,12 @@ def get_EMAs(
                 f"{period} EMA": [r.ema for r in result],
             }
         )
-
         data_ = data_.merge(ma_df, how="inner", on="DateTime")
+        if len(MA_PERIODS) == len(periods):
+            data_[f"Price to {period} EMA Var. %"] = (
+                data_["Close"]
+                - data_[f"{period} EMA"].apply(pd.to_numeric, downcast="float")
+            ) / data_["Close"]
 
     return data_
 
@@ -68,14 +73,8 @@ def derive_timeframes_from_5_min_data(
 
 
 def getIntradayVWAP(row, quotes_list):
-    result = indicators.get_vwap(
-        [quotes_list[row.name]],
-        start=datetime(
-            row["DateTime"].year, row["DateTime"].month, row["DateTime"].day
-        ),
-    )
-    row_num += 1
-    return r[0].vwap
+    result = indicators.get_vwap([quotes_list[row.name]], start=row["DateTime"])
+    return result[0].vwap
 
 
 def add_EMA_derived_cols(df_list: Tuple[pd.DataFrame, List[Quote]]) -> pd.DataFrame:
@@ -93,10 +92,10 @@ def add_EMA_derived_cols(df_list: Tuple[pd.DataFrame, List[Quote]]) -> pd.DataFr
     ) & (computed_data["21 EMA"] > computed_data["34 EMA"])
 
     print("VWAP", end=", ", flush=True)
-    # global row_num
-    # row_num = 0
-    computed_data["Intraday VWAP"] = computed_data.apply(
-        lambda row: getIntradayVWAP(row, quotes_list), axis=1
+    computed_data["Intraday VWAP"] = (
+        computed_data.reset_index()
+        .apply(lambda row: getIntradayVWAP(row, quotes_list), axis=1)
+        .values
     )
 
     # make it so that every day at 930 it will reset change it
@@ -231,7 +230,7 @@ def add_price_action(df_list: Tuple[pd.DataFrame, List[Quote]]) -> pd.DataFrame:
     (df, quotes_list) = df_list
     init_cols = df.columns
     df.columns = [*["open", "high", "low", "close", "vol"], *df.columns[5:]]
-    df = candlestick.inverted_hammer(market_data, target="Is Inverted Hammer")
+    df = candlestick.inverted_hammer(df, target="Is Inverted Hammer")
     df = candlestick.hammer(df, target="Is Hammer")
     df = candlestick.bearish_engulfing(df, target="Is Bearish Engulfing")
     df = candlestick.bullish_engulfing(df, target="Is Bullish Engulfing")
