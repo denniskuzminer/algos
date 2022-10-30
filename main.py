@@ -54,11 +54,13 @@ def main():
                 ]
             ):
                 current_timeframe = ["5Min", *AGG_FREQS][i]
+
                 print(f"\nAnalyzing \033[1;32m{current_timeframe}\033[0m data")
                 df = add_EMA_derived_cols(
                     (get_EMAs((market_data, quote_list)), quote_list)
                 )
                 df = add_technicals((df, quote_list))
+                df = add_price_action((df, quote_list))
                 df["Time Frame"] = current_timeframe
                 consolidated_data = pd.concat([consolidated_data, df])
             consolidated_data.to_csv(  # .merge(agg_market_data, on="DateTime")
